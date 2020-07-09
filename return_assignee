@@ -1,0 +1,63 @@
+import com.atlassian.jira.issue.IssueManager
+import com.atlassian.jira.component.ComponentAccessor
+import com.atlassian.jira.issue.MutableIssue
+import com.atlassian.jira.event.type.EventDispatchOption
+import com.atlassian.jira.bc.issue.search.SearchService
+import com.atlassian.jira.issue.search.SearchException
+import com.atlassian.jira.bc.user.search.UserSearchService
+import com.atlassian.jira.web.bean.PagerFilter
+IssueManager issueManager = ComponentAccessor.getIssueManager()
+MutableIssue issue
+def searchService = ComponentAccessor.getComponentOfType(SearchService)
+def userSearchService = ComponentAccessor.getComponent(UserSearchService)
+def admin = ComponentAccessor.getUserManager().getUserByKey('admin')
+def ChangeHistoryManager = ComponentAccessor.getChangeHistoryManager()
+def user
+def created, field, from, to
+def output = ""
+def jql = "" //Your JQL here
+SearchService.ParseResult parseResult = searchService.parseQuery(admin, jql)
+//
+if (parseResult.isValid()){
+    try {
+        def results = searchService.search(admin, parseResult.query, PagerFilter.unlimitedFilter)
+        def issues = results.results
+        issues.each {
+            issue = issueManager.getIssueObject(it.key);
+            for (change in ChangeHistoryManager.getAllChangeItems(issue))
+            {
+                created = change.created
+                field = change.field
+                from = change.from
+                to = change.to
+
+                output = output + created + ': ' + field + ': ' + from + ': ' + to + '<br/>'
+                if(change.getUser().toString()=="user.name")
+                {
+                    log.warn(change.getUser())
+                    if(field.toString()=="assignee"){
+                        if(created.toString()>="2019-12-06"&&created.toString()<"2019-12-07")//pase your dates{
+                            if(from!=null){
+                                log.warn("from ("+from+") " + "to ("+to+")"+" field="+field)
+                                user =  userSearchService.findUsersByFullName(change.from.toString())
+                                issue.setAssignee(ComponentAccessor.getUserManager().getUserByKey(user?.key))
+                                issueManager.updateIssue(admin, issue, EventDispatchOption.ISSUE_UPDATED, false)
+                            }
+                            else {
+                                issue.setAssignee(null)
+                                issueManager.updateIssue(admin, issue, EventDispatchOption.ISSUE_UPDATED, false)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+
+    } catch (SearchException e) {
+        e.printStackTrace()
+    }
+} else {
+    log.warn("Invalid query")
+    return null
+}
